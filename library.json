@@ -1,0 +1,22 @@
+{
+  "name": "GAACE_Core",
+  "version": "1.0.0",
+  "description": "A foundational set of libraries supporting applications built using the GAACE framework.",
+  "keywords": "device-control, instrumentation, framework",
+  "authors": [
+    {
+      "name": "Gordon Anderson",
+      "email": "gaa@gaa-ce.com",
+      "maintainer": true
+    }
+  ],
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/GordonAnderson/GAACE_Core.git"
+  },
+  "frameworks": "arduino",
+  "platforms": "*",
+  "build": {
+    "srcFilter": ["+<*>", "-<FlashFS>"]
+  }
+}
