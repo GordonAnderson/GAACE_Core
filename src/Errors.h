@@ -39,6 +39,13 @@
 #ifndef ERRORS_H
 #define ERRORS_H
 
+extern int ErrorCode;
+
+#define SetErrorCode(x) ErrorCode=x
+
+#define ERR(err)  { SetErrorCode(err); SendNAK; return;}
+#define BADARG  { SetErrorCode(ERR_BADARG); SendNAK; return;}
+
 /**
  * @brief Typed enumeration of all MIPS / AMPS error codes.
  *
