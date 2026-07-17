@@ -1,7 +1,7 @@
 #ifndef CHARALLOCATE_H_
 #define CHARALLOCATE_H_
 
-#include <Arduino.h>   // Corrected case (Linux file systems are case-sensitive)
+#include "gaace_compat.h"
 #include <stdint.h>
 #include <stdlib.h>    // for malloc / free
 

@@ -30,7 +30,7 @@
  * external synchronisation.
  */
 
-#include <Arduino.h>   // Corrected case (Linux FS is case-sensitive)
+#include "gaace_compat.h"
 
 class ringBuffer
 {
@@ -203,7 +203,7 @@ public:
      * WARNING: modifying this string while the buffer contains data will
      * corrupt the internal line count (Commands).  Always call clear() first.
      */
-    String EOLchars;
+    const char *EOLchars;
 
     /**
      * @brief Characters silently dropped by put() before insertion (default "").
@@ -211,7 +211,7 @@ public:
      * Useful for stripping carriage returns or other noise characters.
      * Safe to modify at any time — it only affects future put() calls.
      */
-    String Ignore;
+    const char *Ignore;
 
 private:
     // -----------------------------------------------------------------------

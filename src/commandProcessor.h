@@ -32,8 +32,8 @@
  *  - Add ring-buffer selection function.
  */
 
-#include <Arduino.h>       // Corrected case (Linux FS is case-sensitive)
-#include "ringBuffer.h"
+#include "gaace_compat.h"
+#include "RingBuffer.h"
 #include "charAllocate.h"
 
 // ---------------------------------------------------------------------------
@@ -161,18 +161,18 @@ public:
      *
      * @param s  Stream to add.  Silently ignored if NULL or the array is full.
      */
-    void registerStream(Stream *s);
+    void registerStream(GStream *s);
 
     /**
      * @brief Select a previously registered Stream as the active output.
      * @return true if @p s was found and selected; false otherwise.
      */
-    bool selectStream(Stream *s);
+    bool selectStream(GStream *s);
 
     /**
      * @brief Return the currently selected output Stream.
      */
-    Stream *selectedStream(void);
+    GStream *selectedStream(void);
 
     /**
      * @brief Enable or disable processing of a particular Stream.
@@ -183,7 +183,7 @@ public:
      * @param s     Stream to configure.
      * @param flag  true = stop processing; false = resume processing.
      */
-    void setStreamActive(Stream *s, bool active);
+    void setStreamActive(GStream *s, bool active);
 
     // -----------------------------------------------------------------------
     // Command table management
@@ -343,7 +343,7 @@ public:
 
     ringBuffer   *rb;   ///< Internal ring buffer for incoming characters
     charAllocate *ca;   ///< Per-command scratch allocator
-    Stream       *serial; ///< Currently active output stream
+    GStream       *serial; ///< Currently active output stream
 
 private:
     // -----------------------------------------------------------------------
@@ -375,7 +375,7 @@ private:
     int          numArgs;               ///< Argument count for the current command line
     int          numStreams;            ///< Number of registered streams
     int          error;                 ///< Error code from the most recent sendNAK
-    Stream      *streams[MAX_STREAMS];  ///< Registered input/output streams
+    GStream      *streams[MAX_STREAMS];  ///< Registered input/output streams
     bool         doNotProcess[MAX_STREAMS]; ///< Per-stream processing inhibit flags
 };
 

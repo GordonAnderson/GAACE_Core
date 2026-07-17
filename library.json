@@ -1,7 +1,7 @@
 {
   "name": "GAACE_Core",
-  "version": "1.0.0",
-  "description": "A foundational set of libraries supporting applications built using the GAACE framework.",
+  "version": "1.1.0-stm32",
+  "description": "A foundational set of libraries supporting applications built using the GAACE framework. Arduino-optional: builds on the Arduino framework and on bare STM32Cube (HAL/LL) via the GStream shim.",
   "keywords": "device-control, instrumentation, framework",
   "authors": [
     {
@@ -14,7 +14,7 @@
     "type": "git",
     "url": "https://github.com/GordonAnderson/GAACE_Core.git"
   },
-  "frameworks": "arduino",
+  "frameworks": "*",
   "platforms": "*",
   "build": {
     "srcFilter": ["+<*>", "-<FlashFS>"]

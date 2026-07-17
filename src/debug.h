@@ -16,7 +16,7 @@
  *   Development     — DEBUG (calls a user-registered callback)
  *
  * Supported targets (selected via preprocessor):
- *   SAMD21_SERIES, SAMD51_SERIES, SAM3X8, ARDUINO_TEENSY40, ESP_PLATFORM
+ *   SAMD21_SERIES, SAMD51_SERIES, SAM3X8, ARDUINO_TEENSY40, ESP_PLATFORM, STM32H7 (pure Cube)
  *
  * Usage
  * -----
@@ -29,7 +29,7 @@
  * by each constructor call.
  */
 
-#include <Arduino.h>
+#include "gaace_compat.h"
 #include "commandProcessor.h"
 
 class debug

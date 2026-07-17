@@ -1,5 +1,10 @@
 /*
- * Button — a small library for Arduino to handle button debouncing
+ * Button — small debounced digital-button driver.
+ *
+ * Dual-build: compiles on pure STM32Cube (HAL GPIO + HAL_GetTick) AND on
+ * Arduino (pinMode/digitalRead/millis) from the same source, selected by the
+ * ARDUINO macro. The debounce LOGIC is identical on both — only the pin I/O
+ * and time source differ.
  *
  * MIT licensed.
  */
@@ -7,143 +12,77 @@
 #ifndef BUTTON_H
 #define BUTTON_H
 
-#include <Arduino.h>
+#include "gaace_compat.h"     // dual-build: pulls <Arduino.h> or Cube CMSIS bits
+
+#if !defined(ARDUINO)
+#include "stm32h7xx_hal.h"    // HAL GPIO types on the Cube path
+#endif
 
 /**
  * @file Button.h
- * @brief Debounced digital button driver for Arduino.
+ * @brief Debounced digital button driver.
  *
  * Provides edge-detection (pressed / released / toggled) on top of a simple
- * time-based debounce filter.  The debounce window uses unsigned elapsed-time
- * arithmetic, so it is immune to the millis() 32-bit rollover (~49.7 days).
+ * time-based debounce filter. The debounce window uses unsigned elapsed-time
+ * arithmetic, so it is immune to the millis()/HAL_GetTick() 32-bit rollover.
  *
- * Typical usage
- * -------------
- * @code
- *   Button btn(7);          // pin 7, 100 ms debounce (default)
+ * IMPORTANT: call read() once per loop iteration. pressed(), released(), and
+ * toggled() all operate on the snapshot captured by the most recent read().
  *
- *   void setup() { btn.begin(); }
+ * Active-low wiring is assumed (button connects the pin to GND; internal
+ * pull-up enabled). PRESSED = pin low, RELEASED = pin high.
  *
- *   void loop() {
- *       btn.read();                         // must be called every loop
- *       if (btn.pressed())  doSomething();
- *       if (btn.released()) doSomethingElse();
- *   }
- * @endcode
- *
- * Important: call read() once per loop iteration.  pressed(), released(), and
- * toggled() all operate on the state snapshot captured by the most recent
- * read() call — do NOT call read() again between them in the same iteration.
- * Calling read() multiple times per loop may miss or duplicate events.
- *
- * Event consumption
- * -----------------
- * pressed(), released(), and toggled() each consume the change flag the first
- * time they return true.  If you need to test more than one condition in the
- * same iteration, cache the result of read() and use the state constants:
- *
- * @code
- *   bool state   = btn.read();
- *   bool changed = btn.hasChanged();
- *   if (changed && state == Button::PRESSED)  ...
- *   if (changed && state == Button::RELEASED) ...
- * @endcode
+ * Construction differs by platform:
+ *   Arduino:   Button btn(7);                       // integer pin
+ *   STM32Cube: Button btn(GPIOB, GPIO_PIN_7);       // port + pin
  */
 class Button
 {
 public:
     // -----------------------------------------------------------------------
-    // State constants
+    // State constants (active-low)
     // -----------------------------------------------------------------------
-
-    /** Pin state when the button is physically pressed (active-low wiring). */
+#if defined(ARDUINO)
     static const uint8_t PRESSED  = LOW;
-
-    /** Pin state when the button is physically released. */
     static const uint8_t RELEASED = HIGH;
+#else
+    static const uint8_t PRESSED  = 0;   // pin low  = pressed
+    static const uint8_t RELEASED = 1;   // pin high = released
+#endif
 
     // -----------------------------------------------------------------------
-    // Construction / initialisation
+    // Construction
     // -----------------------------------------------------------------------
-
-    /**
-     * @brief Construct a Button bound to @p pin.
-     *
-     * @param pin          Arduino pin number connected to the button.
-     * @param debounce_ms  Debounce window in milliseconds.  State changes are
-     *                     ignored for this long after each detected edge.
-     *                     Default is 100 ms.
-     */
+#if defined(ARDUINO)
     explicit Button(uint8_t pin, uint16_t debounce_ms = 100);
+#else
+    explicit Button(GPIO_TypeDef *port, uint16_t pin, uint16_t debounce_ms = 100);
+#endif
 
-    /**
-     * @brief Initialise the pin mode and sample the initial button state.
-     *
-     * Must be called from setup() before any other method.  Reads the actual
-     * pin state so that no spurious pressed/released event fires at boot even
-     * if the button is held down at startup.
-     */
     void begin();
 
-    // -----------------------------------------------------------------------
-    // Core update — call exactly once per loop() iteration
-    // -----------------------------------------------------------------------
-
-    /**
-     * @brief Sample the pin and update internal state.
-     *
-     * Applies the debounce filter.  Must be called once per loop() iteration
-     * before testing pressed(), released(), or toggled().
-     *
-     * @return Current debounced pin state: Button::PRESSED or Button::RELEASED.
-     */
     bool read();
 
-    // -----------------------------------------------------------------------
-    // Edge / state queries — valid after the most recent read() call
-    // -----------------------------------------------------------------------
-
-    /**
-     * @brief Return true if the button state changed on the last read().
-     *
-     * This is a **destructive read**: the flag is cleared after the first call
-     * that returns true.  Subsequent calls return false until the next change.
-     *
-     * Prefer pressed() / released() / toggled() for most use cases.
-     */
     bool hasChanged();
-
-    /**
-     * @brief Return true if the button was pressed on the last read().
-     *
-     * Equivalent to: state == PRESSED && hasChanged().
-     * Consumes the change flag.
-     */
     bool pressed();
-
-    /**
-     * @brief Return true if the button was released on the last read().
-     *
-     * Equivalent to: state == RELEASED && hasChanged().
-     * Consumes the change flag.
-     */
     bool released();
-
-    /**
-     * @brief Return true if the button state changed on the last read(),
-     *        regardless of direction.
-     *
-     * Equivalent to hasChanged().  Provided as a named alias for readability.
-     * Consumes the change flag.
-     */
     bool toggled();
 
 private:
-    uint8_t  _pin;             ///< Arduino pin number
-    uint16_t _debounceMs;      ///< Debounce window in milliseconds
-    bool     _state;           ///< Current debounced state (true = HIGH = RELEASED)
-    uint32_t _lastChangeTime;  ///< millis() timestamp of the last detected edge
-    bool     _hasChanged;      ///< True if state changed since last hasChanged() call
+#if defined(ARDUINO)
+    uint8_t       _pin;
+#else
+    GPIO_TypeDef *_port;
+    uint16_t      _pin;
+#endif
+    uint16_t _debounceMs;
+    bool     _state;
+    uint32_t _lastChangeTime;
+    bool     _hasChanged;
+
+    bool     rawRead();
+    uint32_t nowMs();
+    void     configurePin();
 };
 
 #endif // BUTTON_H

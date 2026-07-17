@@ -1,4 +1,8 @@
 #include "debug.h"
+#if !defined(ARDUINO)
+#include "GHal.h"
+#include "stm32h7xx_hal.h"
+#endif
 
 // =============================================================================
 //  Module-level state
@@ -26,6 +30,13 @@ static uint32_t addOffset = 0;
 
 /** Optional user-supplied callback invoked by the DEBUG command. */
 static void (*debugFunction)(void) = NULL;
+
+#if !defined(ARDUINO)
+/** Optional project-supplied hardware hook for pin/analog commands (Cube). */
+static GHal *g_hal = NULL;
+void  debugSetHal(GHal *hal) { g_hal = hal; }
+GHal *debugGetHal(void)      { return g_hal; }
+#endif
 
 // =============================================================================
 //  Internal helpers
@@ -137,8 +148,13 @@ static void setADCres(void)
     if (cp->getNumArgs() != 1) { cp->sendNAK(); return; }
     if (cp->getValue(&i, 2, 16))
     {
+#if defined(ARDUINO)
         analogReadResolution(i);
         cp->sendACK();
+#else
+        if (g_hal && g_hal->setADCResolutionBits(i)) cp->sendACK();
+        else cp->sendNAK();
+#endif
         return;
     }
     cp->sendNAK();
@@ -151,8 +167,13 @@ static void setDACres(void)
     if (cp->getNumArgs() != 1) { cp->sendNAK(); return; }
     if (cp->getValue(&i, 2, 16))
     {
+#if defined(ARDUINO)
         analogWriteResolution(i);
         cp->sendACK();
+#else
+        if (g_hal && g_hal->setDACResolutionBits(i)) cp->sendACK();
+        else cp->sendNAK();
+#endif
         return;
     }
     cp->sendNAK();
@@ -165,8 +186,14 @@ static void getADC(void)
     if (cp->getNumArgs() != 1) { cp->sendNAK(); return; }
     if (cp->getValue(&i, 0, 100))
     {
+#if defined(ARDUINO)
         cp->sendACK(false);
         cp->println(analogRead(i));
+#else
+        if (g_hal) { int v = g_hal->analogRead(i);
+                     if (v >= 0) { cp->sendACK(false); cp->println(v); return; } }
+        cp->sendNAK();
+#endif
         return;
     }
     cp->sendNAK();
@@ -184,8 +211,13 @@ static void setDAC(void)
     {
         if (cp->getValue(&i, 0, 65535))
         {
+#if defined(ARDUINO)
             analogWrite(ch, i);
             cp->sendACK();
+#else
+            if (g_hal && g_hal->analogWrite(ch, i)) cp->sendACK();
+            else cp->sendNAK();
+#endif
             return;
         }
     }
@@ -333,6 +365,28 @@ static void cpuTemp(void)
     treal = tempmonGetTemp();
 #endif
 
+#if !defined(ARDUINO)
+    // STM32H7: use the factory temperature calibration values and a raw ADC
+    // reading of the internal temperature channel (supplied by the project via
+    // GHal, since which ADC/VREF to use is board-specific).
+    //   TS_CAL1: raw ADC at 30 C   (0x1FF1E820)
+    //   TS_CAL2: raw ADC at 110 C  (0x1FF1E840)
+    // Both were captured at VDDA = 3.3 V, 16-bit right-aligned.
+    if (g_hal)
+    {
+        int raw = g_hal->readInternalTempRaw();
+        if (raw >= 0)
+        {
+            const uint16_t TS_CAL1 = *(const uint16_t *)0x1FF1E820; // 30 C
+            const uint16_t TS_CAL2 = *(const uint16_t *)0x1FF1E840; // 110 C
+            const float    T1 = 30.0f, T2 = 110.0f;
+            if (TS_CAL2 != TS_CAL1)
+                treal = ((T2 - T1) / (float)((int)TS_CAL2 - (int)TS_CAL1))
+                        * (float)(raw - (int)TS_CAL1) + T1;
+        }
+    }
+#endif
+
     if (treal < -1000.0f) { cp->sendNAK(); return; } // unsupported platform
     cp->sendACK(false);
     cp->println(treal);
@@ -368,11 +422,21 @@ static void UUID(void)
     val = adwUniqueID;
 #endif
 
+#if !defined(ARDUINO)
+    // STM32H7: 96-bit factory unique ID, three 32-bit words at 0x1FF1E800.
+    val = (const unsigned int *)UID_BASE;   // UID_BASE = 0x1FF1E800 (CMSIS)
+#endif
+
     if (val == NULL) { cp->sendNAK(); return; } // unsupported platform
 
     cp->sendACK(false);
     cp->print("ID: ");
-    for (byte b = 0; b < 4; b++) cp->print((uint32_t)val[b], HEX);
+#if !defined(ARDUINO)
+    const int nWords = 3;   // STM32H7 unique ID is 96-bit (3 words)
+#else
+    const int nWords = 4;
+#endif
+    for (int b = 0; b < nWords; b++) cp->print((uint32_t)val[b], HEX);
     cp->print();
 }
 
@@ -390,6 +454,9 @@ void debug::softwareReset(void)
     cp->sendACK();
 
 #if SAMD21_SERIES || SAMD51_SERIES
+    NVIC_SystemReset();
+
+#elif !defined(ARDUINO)   // pure STM32Cube (H7 and other Cortex-M with CMSIS)
     NVIC_SystemReset();
 
 #elif SAM3X8
@@ -412,7 +479,11 @@ static void upTime(void)
 {
     if (cp->getNumArgs() != 0) { cp->sendNAK(); return; }
     cp->sendACK(false);
+#if defined(ARDUINO)
     float uptime = (float)millis() / 60000.0f;
+#else
+    float uptime = (float)HAL_GetTick() / 60000.0f;
+#endif
     cp->print("System has been up for at least: ");
     cp->print(uptime);
     cp->println(" minutes");
@@ -645,12 +716,20 @@ static void setPinMode(void)
     if (!cp->getValue(&pin, 0, 100)) { cp->sendNAK(); return; }
     if (!cp->getValue(&mode, "INPUT,OUTPUT,PULLUP")) { cp->sendNAK(); return; }
 
-    // BUG FIX: all comparisons were inverted (missing == 0)
+#if defined(ARDUINO)
     if      (strcasecmp(mode, "INPUT")  == 0) pinMode(pin, INPUT);
     else if (strcasecmp(mode, "PULLUP") == 0) pinMode(pin, INPUT_PULLUP);
     else if (strcasecmp(mode, "OUTPUT") == 0) pinMode(pin, OUTPUT);
-
     cp->sendACK();
+#else
+    if (!g_hal) { cp->sendNAK(); return; }
+    int m = -1;
+    if      (strcasecmp(mode, "INPUT")  == 0) m = 0;
+    else if (strcasecmp(mode, "OUTPUT") == 0) m = 1;
+    else if (strcasecmp(mode, "PULLUP") == 0) m = 2;
+    if (m >= 0 && g_hal->pinMode(pin, m)) cp->sendACK();
+    else cp->sendNAK();
+#endif
 }
 
 /**
@@ -675,7 +754,7 @@ static void setPin(void)
     // BUG FIX: "SPLUSE" corrected to "SPULSE"
     if (!cp->getValue(&mode, "LOW,HIGH,PULSE,SPULSE")) { cp->sendNAK(); return; }
 
-    // BUG FIX: all comparisons were inverted (missing == 0)
+#if defined(ARDUINO)
     if (strcasecmp(mode, "LOW") == 0)
     {
         digitalWrite(pin, LOW);
@@ -686,18 +765,37 @@ static void setPin(void)
     }
     else if (strcasecmp(mode, "PULSE") == 0)
     {
-        // Instantaneous toggle with no dwell time.
         if (digitalRead(pin) == LOW) { digitalWrite(pin, HIGH); digitalWrite(pin, LOW); }
         else                         { digitalWrite(pin, LOW);  digitalWrite(pin, HIGH); }
     }
     else if (strcasecmp(mode, "SPULSE") == 0)
     {
-        // Slow pulse: toggle with a 1 ms dwell before returning to the original state.
         if (digitalRead(pin) == LOW) { digitalWrite(pin, HIGH); delay(1); digitalWrite(pin, LOW); }
         else                         { digitalWrite(pin, LOW);  delay(1); digitalWrite(pin, HIGH); }
     }
-
     cp->sendACK();
+#else
+    if (!g_hal) { cp->sendNAK(); return; }
+    bool ok = true;
+    if (strcasecmp(mode, "LOW") == 0)       ok = g_hal->digitalWrite(pin, 0);
+    else if (strcasecmp(mode, "HIGH") == 0) ok = g_hal->digitalWrite(pin, 1);
+    else if (strcasecmp(mode, "PULSE") == 0)
+    {
+        int cur = g_hal->digitalRead(pin);
+        if (cur < 0) ok = false;
+        else if (cur == 0) { ok  = g_hal->digitalWrite(pin, 1); ok &= g_hal->digitalWrite(pin, 0); }
+        else               { ok  = g_hal->digitalWrite(pin, 0); ok &= g_hal->digitalWrite(pin, 1); }
+    }
+    else if (strcasecmp(mode, "SPULSE") == 0)
+    {
+        int cur = g_hal->digitalRead(pin);
+        if (cur < 0) ok = false;
+        else if (cur == 0) { ok  = g_hal->digitalWrite(pin, 1); HAL_Delay(1); ok &= g_hal->digitalWrite(pin, 0); }
+        else               { ok  = g_hal->digitalWrite(pin, 0); HAL_Delay(1); ok &= g_hal->digitalWrite(pin, 1); }
+    }
+    else ok = false;
+    if (ok) cp->sendACK(); else cp->sendNAK();
+#endif
 }
 
 /** DIN — read and print the digital state of a GPIO pin (HIGH or LOW). */
@@ -707,8 +805,14 @@ static void getPin(void)
     if (cp->getNumArgs() != 1) { cp->sendNAK(); return; }
     if (cp->getValue(&pin, 0, 100))
     {
+#if defined(ARDUINO)
         cp->sendACK(false);
         cp->println(digitalRead(pin) == HIGH ? "HIGH" : "LOW");
+#else
+        if (g_hal) { int v = g_hal->digitalRead(pin);
+                     if (v >= 0) { cp->sendACK(false); cp->println(v ? "HIGH" : "LOW"); return; } }
+        cp->sendNAK();
+#endif
         return;
     }
     cp->sendNAK();

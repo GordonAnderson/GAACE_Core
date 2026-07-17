@@ -1,4 +1,30 @@
 #include "commandProcessor.h"
+#include <ctype.h>    // toupper
+#include <string.h>   // strlen, strcmp, strncpy, memmove
+#include <stdlib.h>   // strtol, strtof
+
+// =============================================================================
+//  Small C-string helpers (replace the Arduino String methods the original
+//  used: String::toUpperCase() and String::trim()). In-place, NUL-terminated.
+// =============================================================================
+
+static void strUpper(char *s)
+{
+    if (!s) return;
+    for (; *s; ++s) *s = (char)toupper((unsigned char)*s);
+}
+
+static void strTrim(char *s)
+{
+    if (!s) return;
+    // Trim trailing whitespace.
+    size_t n = strlen(s);
+    while (n > 0 && isspace((unsigned char)s[n - 1])) s[--n] = '\0';
+    // Trim leading whitespace.
+    char *p = s;
+    while (*p && isspace((unsigned char)*p)) ++p;
+    if (p != s) memmove(s, p, strlen(p) + 1);
+}
 
 // =============================================================================
 //  Module-level singleton pointer
@@ -166,7 +192,7 @@ commandProcessor::~commandProcessor()
 //  Stream management
 // =============================================================================
 
-void commandProcessor::registerStream(Stream *s)
+void commandProcessor::registerStream(GStream *s)
 {
     if (s == NULL) return;
     if (numStreams >= MAX_STREAMS)
@@ -182,7 +208,7 @@ void commandProcessor::registerStream(Stream *s)
     if (numStreams == 1) serial = s;
 }
 
-bool commandProcessor::selectStream(Stream *s)
+bool commandProcessor::selectStream(GStream *s)
 {
     for (int i = 0; i < numStreams; i++)
     {
@@ -195,7 +221,7 @@ bool commandProcessor::selectStream(Stream *s)
     return false;
 }
 
-Stream *commandProcessor::selectedStream(void)
+GStream *commandProcessor::selectedStream(void)
 {
     return serial;
 }
@@ -207,7 +233,7 @@ Stream *commandProcessor::selectedStream(void)
  * consistent capitalisation.  The semantics are inverted so that passing
  * `true` means "keep processing this stream" (less surprising for callers).
  */
-void commandProcessor::setStreamActive(Stream *s, bool active)
+void commandProcessor::setStreamActive(GStream *s, bool active)
 {
     for (int i = 0; i < numStreams; i++)
     {
@@ -291,7 +317,6 @@ bool commandProcessor::processCommand(Command *c)
     if (c->pointer == NULL) return false;
 
     char   token[MAXTOKEN];
-    String tokenS;
 
     switch (c->type)
     {
@@ -322,14 +347,14 @@ bool commandProcessor::processCommand(Command *c)
             else
             {
                 rb->getToken(token, DELIM);
-                tokenS = token;
+                long iv = strtol(token, NULL, 10);
                 if (c->options != NULL)
                 {
                     int lo = ((int *)c->options)[0];
                     int hi = ((int *)c->options)[1];
-                    if (tokenS.toInt() < lo || tokenS.toInt() > hi) return false;
+                    if (iv < lo || iv > hi) return false;
                 }
-                *(int *)c->pointer = (int)tokenS.toInt();
+                *(int *)c->pointer = (int)iv;
                 sendACK();
             }
             return true;
@@ -344,14 +369,14 @@ bool commandProcessor::processCommand(Command *c)
             else
             {
                 rb->getToken(token, DELIM);
-                tokenS = token;
+                float fv = strtof(token, NULL);
                 if (c->options != NULL)
                 {
                     float lo = ((float *)c->options)[0];
                     float hi = ((float *)c->options)[1];
-                    if (tokenS.toFloat() < lo || tokenS.toFloat() > hi) return false;
+                    if (fv < lo || fv > hi) return false;
                 }
-                *(float *)c->pointer = tokenS.toFloat();
+                *(float *)c->pointer = fv;
                 sendACK();
             }
             return true;
@@ -386,10 +411,9 @@ bool commandProcessor::processCommand(Command *c)
             else
             {
                 rb->getToken(token, DELIM);
-                tokenS = token;
-                if (!caseSensitive) tokenS.toUpperCase();
-                if      (tokenS == "TRUE")  *(bool *)c->pointer = true;
-                else if (tokenS == "FALSE") *(bool *)c->pointer = false;
+                if (!caseSensitive) strUpper(token);
+                if      (strcmp(token, "TRUE")  == 0) *(bool *)c->pointer = true;
+                else if (strcmp(token, "FALSE") == 0) *(bool *)c->pointer = false;
                 else return false;
                 sendACK();
             }
@@ -405,8 +429,7 @@ bool commandProcessor::processCommand(Command *c)
             else
             {
                 rb->getToken(token, DELIM);
-                tokenS = token;
-                *(uint8_t *)c->pointer = (uint8_t)tokenS.toInt();
+                *(uint8_t *)c->pointer = (uint8_t)strtol(token, NULL, 10);
                 sendACK();
             }
             return true;
@@ -445,9 +468,11 @@ Command *commandProcessor::findCommand(void)
 {
     if (commands == NULL) return NULL;
 
-    String cmdS = cmd;
-    cmdS.trim();
-    if (!caseSensitive) cmdS.toUpperCase();
+    char cmdS[MAXTOKEN];
+    strncpy(cmdS, cmd, MAXTOKEN - 1);
+    cmdS[MAXTOKEN - 1] = '\0';
+    strTrim(cmdS);
+    if (!caseSensitive) strUpper(cmdS);
 
     CommandList *cl = commands;
     while (cl != NULL)
@@ -455,7 +480,8 @@ Command *commandProcessor::findCommand(void)
         for (int i = 0; cl->cmds[i].cmd != NULL; i++)
         {
             // Quick length filter before the character-by-character compare.
-            if (cmdS.length() != strlen(cl->cmds[i].cmd)) { continue; }
+            size_t cmdSlen = strlen(cmdS);
+            if (cmdSlen != strlen(cl->cmds[i].cmd)) { continue; }
 
             // Decide where to start the character comparison.
             // For '?' entries the stored cmd[0] is '?' and the incoming
@@ -472,7 +498,7 @@ Command *commandProcessor::findCommand(void)
                     match = false; // not a valid get/set prefix
             }
 
-            for (; match && (unsigned int)j < cmdS.length(); j++)
+            for (; match && (unsigned int)j < cmdSlen; j++)
             {
                 char incoming = cmdS[j];
                 char stored   = caseSensitive
@@ -648,7 +674,7 @@ int commandProcessor::userInputInt(const char *message, void (*function)(void))
 {
     char *res = userInput(message, function);
     if (res == NULL) return 0;
-    int i = String(res).toInt();
+    int i = (int)strtol(res, NULL, 10);
     ca->free(res);
     return i;
 }
@@ -657,7 +683,7 @@ float commandProcessor::userInputFloat(const char *message, void (*function)(voi
 {
     char *res = userInput(message, function);
     if (res == NULL) return 0.0f;
-    float f = String(res).toFloat();
+    float f = strtof(res, NULL);
     ca->free(res);
     return f;
 }
@@ -746,9 +772,11 @@ bool commandProcessor::getValue(uint32_t *val, uint32_t ll, uint32_t ul, int fmt
     char *res;
     if (!getValue(&res)) return false;
 
-    uint32_t u;                              // FIXED: was int i
-    if (fmt == HEX) sscanf(res, "%lx", &u); // FIXED: was %x into int
-    else            sscanf(res, "%lu", &u);
+    uint32_t u;
+    unsigned long tmp = 0;                   // scan into unsigned long to match %l
+    if (fmt == HEX) sscanf(res, "%lx", &tmp);
+    else            sscanf(res, "%lu", &tmp);
+    u = (uint32_t)tmp;
     ca->free(res);
 
     bool noRange = (ll == 0 && ul == 0);    // FIXED: was (ul==0)&&(ul==0)
@@ -770,7 +798,7 @@ bool commandProcessor::getValue(float *val, float ll, float ul)
     char *res;
     if (!getValue(&res)) return false;
 
-    float f = String(res).toFloat();
+    float f = strtof(res, NULL);
     ca->free(res);
 
     bool noRange = (ll == 0.0f && ul == 0.0f); // FIXED: was (ul==0)&&(ul==0)

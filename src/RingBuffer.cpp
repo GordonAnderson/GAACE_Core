@@ -36,7 +36,7 @@ ringBuffer::~ringBuffer()
  */
 bool ringBuffer::isEOL(char ch) const
 {
-    for (int i = 0; i < (int)EOLchars.length(); i++)
+    for (int i = 0; i < (int)strlen(EOLchars); i++)
         if (ch == EOLchars[i]) return true;
     return false;
 }
@@ -44,7 +44,7 @@ bool ringBuffer::isEOL(char ch) const
 /** @brief Return true if @p ch should be dropped by put(). */
 bool ringBuffer::isIgnored(char ch) const
 {
-    for (int i = 0; i < (int)Ignore.length(); i++)
+    for (int i = 0; i < (int)strlen(Ignore); i++)
         if (ch == Ignore[i]) return true;
     return false;
 }
