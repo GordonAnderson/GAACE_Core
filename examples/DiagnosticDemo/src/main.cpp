@@ -19,9 +19,15 @@
 #include <Arduino.h>
 #include <commandProcessor.h>
 #include <debug.h>
+#include <GArduinoStream.h>
 
 commandProcessor cp;
 debug dbg(&cp);
+
+// Bridge the Arduino Serial (framework Stream) to GAACE_Core's GStream.
+// This is the one change the Arduino-free refactor requires of an existing
+// project: wrap the Stream instead of passing it directly.
+GArduinoStream serialStream(Serial);
 
 static bool ledState = false;
 
@@ -54,7 +60,7 @@ void setup()
   digitalWrite(LED_BUILTIN, LOW);
 
   Serial.begin(115200);
-  cp.registerStream(&Serial);
+  cp.registerStream(&serialStream);   // was: cp.registerStream(&Serial)
   cp.registerCommands(&appList);
   cp.registerCommands(dbg.debugCommands());
 }
