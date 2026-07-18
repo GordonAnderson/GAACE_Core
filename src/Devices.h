@@ -1,5 +1,6 @@
 #ifndef DEVICES_H
 #define DEVICES_H
+#if defined(ARDUINO)
 
 /**
  * @file Devices.h
@@ -323,4 +324,5 @@ int DAC8571(int8_t addr, int val);
  */
 void MCP4725(uint8_t addr, uint8_t cmd, uint16_t value);
 
+#endif
 #endif // DEVICES_H

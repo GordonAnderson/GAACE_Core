@@ -35,6 +35,7 @@
 
 #ifndef SERIAL_BUFFER_H
 #define SERIAL_BUFFER_H
+#if defined(ARDUINO)
 
 #include <Arduino.h>
 #include <inttypes.h>
@@ -122,4 +123,5 @@ private:
     uint8_t  twiadd;       ///< I2C target address.
 };
 
+#endif
 #endif // SERIAL_BUFFER_H

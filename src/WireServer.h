@@ -44,6 +44,7 @@
 
 #ifndef WIRE_SERVER_H
 #define WIRE_SERVER_H
+#if defined(ARDUINO)
 
 #include <Arduino.h>
 #include <Wire.h>
@@ -206,4 +207,5 @@ private:
     uint8_t  addr; ///< I2C address of the most recent sendCommand() target.
 };
 
+#endif
 #endif // WIRE_SERVER_H

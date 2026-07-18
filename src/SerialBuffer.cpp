@@ -4,6 +4,7 @@
  */
 
 #include "SerialBuffer.h"
+#if defined(ARDUINO)
 
 // -------------------------------------------------------------------------- //
 // Construction / initialisation                                               //
@@ -188,3 +189,4 @@ void SerialBuffer::flush()
         wire->endTransmission();
     }
 }
+#endif

@@ -4,6 +4,7 @@
  */
 
 #include "WireServer.h"
+#if defined(ARDUINO)
 
 // -------------------------------------------------------------------------- //
 // Internal helpers                                                            //
@@ -194,3 +195,4 @@ void WireServer::sendFloat(float value)
     wire->write(b[3]);
     wire->endTransmission();
 }
+#endif

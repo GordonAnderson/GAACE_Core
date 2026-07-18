@@ -1,4 +1,6 @@
 #include "Devices.h"
+#if defined(ARDUINO)
+
 #include <Wire.h>
 
 // =============================================================================
@@ -421,3 +423,5 @@ void MCP4725(uint8_t addr, uint8_t cmd, uint16_t value)
     Wire.write((uint8_t)(value & 0xF0));     // lower byte: bits [7:4] (data [3:0]), lower nibble ignored
     Wire.endTransmission();
 }
+
+#endif

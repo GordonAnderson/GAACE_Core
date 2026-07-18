@@ -1,4 +1,5 @@
 #include "WireHelper.h"
+#if defined(ARDUINO)
 
 // =============================================================================
 //  Construction / configuration
@@ -235,3 +236,5 @@ void WireHelper::requestEventProcessor(void)
         wire->write(sb.read());
     }
 }
+
+#endif

@@ -1,5 +1,6 @@
 #ifndef WIREHELPER_H_
 #define WIREHELPER_H_
+#if defined(ARDUINO)
 
 /**
  * @file WireHelper.h
@@ -207,4 +208,5 @@ private:
     bool          returnAvailable; ///< When true, next request sends byte count
 };
 
+#endif
 #endif // WIREHELPER_H_
