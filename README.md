@@ -1,9 +1,6 @@
 # GAACE_Core
 
-GAACE (Gordon Anderson Arduino Core Extensions) is a collection of reusable C++
-libraries that form the infrastructure layer of embedded firmware projects built
-on the GAACE framework. The libraries are architecture-agnostic and have been
-used on SAMD21, SAMD51, SAM3X8 (Arduino Due), ESP32, and Teensy platforms.
+GAACE_Core (GAA Custom Electronics Core Extensions) is a collection of reusable C++ libraries that form the infrastructure layer for embedded firmware projects built on the GAACE framework. Designed to be architecture-agnostic, these libraries have been successfully deployed across SAMD21, SAMD51, SAM3X8 (Arduino Due), ESP32, and Teensy platforms.
 
 This repository is structured as a [PlatformIO](https://platformio.org/) library:
 the framework source lives in [src/](src/) and is consumed by the application
