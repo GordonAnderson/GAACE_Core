@@ -214,6 +214,36 @@ public:
      */
     bool processCommands(void);
 
+    /**
+     * @brief Execute a single command line synchronously and capture its
+     *        response, without touching the shared ring buffer or the
+     *        currently selected output stream.
+     *
+     * Unlike processStreams()/processCommands(), this uses its own
+     * temporary ring buffer and a memory-backed response stream --
+     * `rb`/`serial`/`mute` are saved and restored around the call. Safe to
+     * call from anywhere (e.g. a background thread, or a script's syscall)
+     * without risk of corrupting a real command that might be partially
+     * buffered in `rb` at the same time: the injected line and any
+     * in-flight human/PC input never share a buffer.
+     *
+     * @param line         Command line to execute, WITHOUT a trailing EOL
+     *                     (one is added automatically). Must not exceed
+     *                     MAXTOKEN-1 command-name characters, same as any
+     *                     other command.
+     * @param responseBuf  Receives whatever would have been written to the
+     *                     output stream (ACK/NAK bytes, any printed value),
+     *                     NUL-terminated. Pass NULL to discard the
+     *                     response. responseBuf[0] is 0x06 on ACK, 0x15 on
+     *                     NAK -- check that to tell success from failure.
+     * @param responseCap  Size of responseBuf in bytes, including the NUL
+     *                     terminator. Ignored if responseBuf is NULL.
+     * @return true if a command line was dispatched, matching
+     *         processCommands()'s own return contract (NOT an ACK/NAK
+     *         indicator -- always true for a non-empty `line`).
+     */
+    bool executeLine(const char *line, char *responseBuf = NULL, int responseCap = 0);
+
     // -----------------------------------------------------------------------
     // Interactive user-input helpers
     // -----------------------------------------------------------------------

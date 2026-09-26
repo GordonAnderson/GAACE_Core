@@ -11,6 +11,7 @@
 // regressed.
 #include <Arduino.h>
 #include <unity.h>
+#include <string.h>
 #include "ringBuffer.h"
 #include "charAllocate.h"
 #include "commandProcessor.h"
@@ -257,6 +258,127 @@ static void test_cmdprocessor_check_expected_args(void) {
   TEST_ASSERT_EQUAL(0x15, ms.buf[0]);
 }
 
+// ============================================================================
+// commandProcessor::executeLine() -- the new synchronous execute+capture
+// primitive. registerStream()'s stream (ms) stays the *normal* output path
+// throughout; these tests confirm executeLine() never touches it.
+// ============================================================================
+
+static void test_executeline_set_and_capture_ack(void) {
+  commandProcessor cp;
+  MockStream ms;
+  cp.registerStream(&ms);
+
+  int value = 0;
+  int range[2] = {0, 100};
+  Command cmds[] = {
+    {"?FOO", CMDint, -1, (void *)&value, (void *)range, "test int"},
+    {NULL}
+  };
+  CommandList list = {cmds, NULL};
+  cp.registerCommands(&list);
+
+  char response[32];
+  ms.reset();
+  bool handled = cp.executeLine("SFOO,42", response, sizeof(response));
+
+  TEST_ASSERT_TRUE(handled);
+  TEST_ASSERT_EQUAL(42, value);
+  TEST_ASSERT_EQUAL(0x06, (uint8_t)response[0]);  // ACK captured
+  TEST_ASSERT_EQUAL(0, ms.len);                    // the *real* stream saw nothing
+}
+
+static void test_executeline_get_capture_includes_value(void) {
+  commandProcessor cp;
+  MockStream ms;
+  cp.registerStream(&ms);
+
+  int value = 77;
+  Command cmds[] = {
+    {"?FOO", CMDint, -1, (void *)&value, NULL, "test int"},
+    {NULL}
+  };
+  CommandList list = {cmds, NULL};
+  cp.registerCommands(&list);
+
+  char response[32];
+  cp.executeLine("GFOO", response, sizeof(response));
+  TEST_ASSERT_EQUAL(0x06, (uint8_t)response[0]);
+  TEST_ASSERT_TRUE(strstr(response, "77") != NULL);
+}
+
+static void test_executeline_unknown_command_captures_nak(void) {
+  commandProcessor cp;
+  MockStream ms;
+  cp.registerStream(&ms);
+
+  char response[32];
+  cp.executeLine("NOSUCHCOMMAND", response, sizeof(response));
+  TEST_ASSERT_EQUAL(0x15, (uint8_t)response[0]);
+}
+
+static void test_executeline_does_not_disturb_partial_input_in_shared_rb(void) {
+  // The scenario this whole design exists to avoid: a human/PC is
+  // mid-typing a real command (no EOL yet) in the *shared* rb when a
+  // script's executeLine() call happens. If executeLine() reused the
+  // shared rb, the injected line would get spliced onto the partial one.
+  commandProcessor cp;
+  MockStream ms;
+  cp.registerStream(&ms);
+
+  int value = 0;
+  Command cmds[] = {
+    {"?FOO", CMDint, -1, (void *)&value, NULL, "test int"},
+    {"?BAR", CMDint, -1, (void *)&value, NULL, "test int"},
+    {NULL}
+  };
+  CommandList list = {cmds, NULL};
+  cp.registerCommands(&list);
+
+  // Partial real input: "SFOO," typed but not finished (no value, no EOL).
+  const char *partial = "SFOO,";
+  for (const char *p = partial; *p; p++) cp.rb->put(*p);
+  TEST_ASSERT_EQUAL(0, cp.rb->lines());
+
+  char response[32];
+  cp.executeLine("GBAR", response, sizeof(response));
+  TEST_ASSERT_EQUAL(0x06, (uint8_t)response[0]);  // the injected call itself worked
+
+  // The partial real input must be exactly as it was left -- untouched.
+  TEST_ASSERT_EQUAL(0, cp.rb->lines());
+  TEST_ASSERT_EQUAL((int)strlen(partial), cp.rb->count());
+}
+
+static void test_executeline_ignores_mute_but_restores_it(void) {
+  commandProcessor cp;
+  MockStream ms;
+  cp.registerStream(&ms);
+
+  int value = 0;
+  Command cmds[] = {
+    {"?FOO", CMDint, -1, (void *)&value, NULL, "test int"},
+    {NULL}
+  };
+  CommandList list = {cmds, NULL};
+  cp.registerCommands(&list);
+
+  // Turn mute on through the normal path (built-in ?MUTE command).
+  feedLine(cp, "SMUTE,TRUE\n");
+  cp.processCommands();
+
+  // executeLine() must still capture a response despite mute being on...
+  char response[32];
+  cp.executeLine("SFOO,5", response, sizeof(response));
+  TEST_ASSERT_EQUAL(0x06, (uint8_t)response[0]);
+
+  // ...and must leave mute exactly as it found it: still on, so a normal
+  // command through the real stream produces no output.
+  ms.reset();
+  feedLine(cp, "SFOO,6\n");
+  cp.processCommands();
+  TEST_ASSERT_EQUAL(0, ms.len);
+}
+
 void setup() {
   delay(2000);  // let the USB CDC serial monitor attach before results print
   UNITY_BEGIN();
@@ -278,6 +400,12 @@ void setup() {
   RUN_TEST(test_cmdprocessor_function_dispatch);
   RUN_TEST(test_cmdprocessor_unknown_command_is_nak);
   RUN_TEST(test_cmdprocessor_check_expected_args);
+
+  RUN_TEST(test_executeline_set_and_capture_ack);
+  RUN_TEST(test_executeline_get_capture_includes_value);
+  RUN_TEST(test_executeline_unknown_command_captures_nak);
+  RUN_TEST(test_executeline_does_not_disturb_partial_input_in_shared_rb);
+  RUN_TEST(test_executeline_ignores_mute_but_restores_it);
 
   UNITY_END();
 }

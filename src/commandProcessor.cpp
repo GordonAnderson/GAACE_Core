@@ -532,6 +532,78 @@ bool commandProcessor::processCommands(void)
 }
 
 // =============================================================================
+//  executeLine() support
+// =============================================================================
+
+namespace
+{
+    /**
+     * @brief A write-only Stream that appends into a caller-supplied buffer.
+     *
+     * Used by executeLine() to capture whatever a command would normally
+     * write to a real port. available()/read()/peek() report "no input" --
+     * this stream is never meant to be read from.
+     */
+    class ResponseCaptureStream : public Stream
+    {
+    public:
+        ResponseCaptureStream(char *buf, int cap) : buf(buf), cap(cap), len(0)
+        {
+            if (buf != NULL && cap > 0) buf[0] = '\0';
+        }
+
+        int available(void) override { return 0; }
+        int read(void) override { return -1; }
+        int peek(void) override { return -1; }
+
+        size_t write(uint8_t b) override
+        {
+            if (buf != NULL && len < cap - 1)
+            {
+                buf[len++] = (char)b;
+                buf[len]   = '\0';
+            }
+            return 1;
+        }
+
+    private:
+        char *buf;
+        int   cap;
+        int   len;
+    };
+}
+
+bool commandProcessor::executeLine(const char *line, char *responseBuf, int responseCap)
+{
+    if (line == NULL) return false;
+
+    // Own, temporary buffer -- never the shared `rb` -- so a real command
+    // that might be partially typed into `rb` right now (from a human or a
+    // PC application) can't be spliced together with this injected line.
+    ringBuffer            tempRb((int)strlen(line) + 8);
+    ResponseCaptureStream tempStream(responseBuf, responseCap);
+
+    for (const char *p = line; *p != '\0'; p++) tempRb.put(*p);
+    tempRb.put('\n');
+
+    ringBuffer *savedRb     = rb;
+    Stream      *savedSerial = serial;
+    bool         savedMute   = mute;
+
+    rb     = &tempRb;
+    serial = &tempStream;
+    mute   = false;  // a script's call always gets its response, regardless of ?MUTE
+
+    bool handled = processCommands();
+
+    rb     = savedRb;
+    serial = savedSerial;
+    mute   = savedMute;
+
+    return handled;
+}
+
+// =============================================================================
 //  Output helpers
 // =============================================================================
 
